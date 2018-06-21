@@ -2,10 +2,25 @@ package mutexpool
 
 import "sync"
 
-type MutexPool struct{ pool []*sync.Mutex }
+type (
+	// пул мьютексов для конкурентной работы на основе ввода
+	// смысл этой конструкции в том, чтоб выбирать мьютекс на основе набора данных (int в данном случае)
+	// блокируя операция не глобально для всех, а только для набора горутин с одинаковым индeксом в пуле
+	MutexPool struct {
+		pool []*sync.Mutex
+		m    *sync.Mutex
+	}
+)
 
-func NewMutexPool(count int) *MutexPool {
-	return &MutexPool{pool: make([]*sync.Mutex, count)}
+func New(count int) *MutexPool {
+	if count <= 0 {
+		panic("zero or less pool size")
+	}
+	p := &MutexPool{pool: make([]*sync.Mutex, count), m: &sync.Mutex{}}
+	for i := range p.pool {
+		p.pool[i] = &sync.Mutex{}
+	}
+	return p
 }
 
 func sum(i ...int) int {
@@ -17,10 +32,9 @@ func sum(i ...int) int {
 }
 
 func (ms *MutexPool) mutex(id ...int) *sync.Mutex {
+	ms.m.Lock()
+	defer ms.m.Unlock()
 	i := sum(id...) % len(ms.pool)
-	if ms.pool[i] == nil {
-		ms.pool[i] = &sync.Mutex{}
-	}
 	return ms.pool[i]
 }
 
@@ -33,13 +47,13 @@ func (ms *MutexPool) Unlock(id ...int) {
 }
 
 func (ms *MutexPool) LockAll() {
-	for i := range ms.pool {
-		ms.pool[i].Lock()
+	for _, m := range ms.pool {
+		m.Lock()
 	}
 }
 
 func (ms MutexPool) UnlockAll() {
-	for i := range ms.pool {
-		ms.pool[i].Unlock()
+	for _, m := range ms.pool {
+		m.Unlock()
 	}
 }
